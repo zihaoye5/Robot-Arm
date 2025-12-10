@@ -17,28 +17,28 @@ class RobotArmEnv(gym.Env):
         参数:
         - render_mode: 渲染模式
         """
-        # 加载MuJoCo模型
-        self.model = mujoco.MjModel.from_xml_path("robot_arm_mujoco.xml")
+        # 1. 加载新的 MuJoCo 模型
+        self.model = mujoco.MjModel.from_xml_path("g1_robot_arm.xml")
         self.data = mujoco.MjData(self.model)
         
-        # 获取关节数量
+        # 获取关节数量 (应为 7)
         self.nu = self.model.nu
         self.nq = self.model.nq
         
-        # 设置动作空间 (扭矩)
+        # 2. 设置动作空间 (扭矩) - 提高上限到 25.0 (适配 G1 关节)
         self.action_space = spaces.Box(
-            low=-15.0, high=15.0, shape=(self.nu,), dtype=np.float32
+            low=-25.0, high=25.0, shape=(self.nu,), dtype=np.float32
         )
         
-        # 设置状态空间
-        # 状态维度: 相对位置向量(3) + 关节角度(6) + 关节速度(6) + 上一时刻关节扭矩(6) + 末端速度(3) = 24维
-        state_dim = 3 + 6 + 6 + 6 + 3  # 24维状态
+        # 3. 设置状态空间
+        # 状态维度: 相对位置向量(3) + 关节角度(nu) + 关节速度(nu) + 上一时刻关节扭矩(nu) + 末端速度(3) = 3*nu + 6 维
+        state_dim = 3 + self.nu + self.nu + self.nu + 3  # nu=7 -> 27维状态
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(state_dim,), dtype=np.float32
         )
         
         # 设置目标位置 (末端执行器)
-        self.target_pos = np.array([0.2, 0.2, 0.2])  # 初始目标位置
+        self.target_pos = np.array([0.2, 0.2, 1.0])  # 初始目标位置 (Z轴初始位置适配 G1 基座高度)
         self.previous_distance = None
         
         # 保存上一时刻的扭矩
@@ -76,16 +76,16 @@ class RobotArmEnv(gym.Env):
         # 获取上一时刻的关节扭矩
         previous_torques = self.previous_torque.copy()
         
-        # 使用body速度获取末端执行器速度
-        ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "ee_link")
+        # 4. 使用新的末端执行器连杆名称获取末端执行器速度
+        ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")
         ee_vel = self.data.cvel[ee_body_id][:3].copy()
         
-        # 拼接状态向量
+        # 拼接状态向量 (维度自动适应新的 self.nu)
         state = np.concatenate([
             relative_pos,          # 相对位置向量 (3,)
-            joint_angles,          # 关节角度 (6,)
-            joint_velocities,      # 关节角速度 (6,)
-            previous_torques,      # 上一时刻关节扭矩 (6,)
+            joint_angles,          # 关节角度 (nu,)
+            joint_velocities,      # 关节角速度 (nu,)
+            previous_torques,      # 上一时刻关节扭矩 (nu,)
             ee_vel                 # 末端速度 (3,)
         ])
         
@@ -100,22 +100,23 @@ class RobotArmEnv(gym.Env):
         # 重置MuJoCo数据
         mujoco.mj_resetData(self.model, self.data)
         
-        # 设置随机目标位置
-        # x轴: [-0.3, 0.3]
-        # y轴: [-0.47, -0.17] 
-        # z轴: [0.2, 0.5]
+        # 5. 设置随机目标位置 (调整到 G1 左臂固定基座的工作空间)
+        # x轴 (向前): [0.1, 0.7]
+        # y轴 (左右): [-0.4, 0.4] 
+        # z轴 (高度): [0.8, 1.4]
         self.target_pos = np.array([
-            self.np_random.uniform(-0.2, 0.2),    # x轴
-            self.np_random.uniform(-0.37, -0.17),   # y轴
-            self.np_random.uniform(0.2, 0.4)        # z轴
+            self.np_random.uniform(0.1, 0.7),    # x轴
+            self.np_random.uniform(-0.4, 0.4),   # y轴
+            self.np_random.uniform(0.8, 1.4)        # z轴
         ])
         
-        self.success_threshold = 0.01  # 1mm阈值
+        self.success_threshold = 0.01  # 1cm 阈值
         
         # 重置步数计数器
         self.step_count = 0
         self.previous_distance = None
         self.min_distance = None
+        # 确保尺寸与新的 self.nu 匹配
         self.previous_torque = np.zeros(self.nu)
         self.previous_joint_velocities = np.zeros(self.nu)
         
@@ -137,8 +138,8 @@ class RobotArmEnv(gym.Env):
         # 保存当前关节速度作为上一时刻的关节速度
         self.previous_joint_velocities = self.data.qvel[:self.nu].copy()
         
-        # 应用动作（扭矩）
-        action = np.clip(action, -15.0, 15.0)
+        # 应用动作（扭矩），使用新的动作限制
+        action = np.clip(action, -25.0, 25.0)
         self.data.ctrl[:self.nu] = action
         
         # 仿真一步
@@ -164,7 +165,7 @@ class RobotArmEnv(gym.Env):
         setp_penalty = 0.1  # 每步扣除0.1奖励，鼓励快速完成任务
         reward -= setp_penalty
 
-        # 基础距离奖励
+        # 基础距离奖励 (原逻辑保持不变，但数值可能需要根据新环境微调)
         if self.min_distance is None:
             self.min_distance = distance
             improvement_reward = 0
@@ -177,7 +178,6 @@ class RobotArmEnv(gym.Env):
             improvement_reward = 0
         self.previous_distance = distance
         # 基础距离惩罚
-        # base_distance_penalty = -distance * 0.5
         base_distance_penalty = -distance ** 0.5 * 0.8
         
         # 阶段性距离奖励（一次性）
@@ -200,7 +200,7 @@ class RobotArmEnv(gym.Env):
         reward += improvement_reward + base_distance_penalty + phase_distance_reward + close_range_bonus
         
         # 速度奖励 - 鼓励在整个过程中保持适中的速度
-        ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "ee_link")
+        ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")
         ee_vel = self.data.cvel[ee_body_id][:3].copy()
         ee_speed = np.linalg.norm(ee_vel)
         
