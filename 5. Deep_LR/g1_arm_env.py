@@ -18,7 +18,7 @@ class RobotArmEnv(gym.Env):
         - render_mode: 渲染模式
         """
         # 1. 加载新的 MuJoCo 模型
-        self.model = mujoco.MjModel.from_xml_path("g1_robot_arm.xml")
+        self.model = mujoco.MjModel.from_xml_path("robot_arm_g1.xml")
         self.data = mujoco.MjData(self.model)
         
         # 获取关节数量 (应为 7)

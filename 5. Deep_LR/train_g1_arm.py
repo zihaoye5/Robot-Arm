@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-使用Stable-Baselines3的TD3算法训练机械臂进行位置跟踪
+使用Stable-Baselines3的TD3算法训练宇树G1机械臂（7 DoF）进行位置跟踪
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ from stable_baselines3.common.env_util import make_vec_env # 创建并行环境�
 from stable_baselines3.common.vec_env import VecNormalize  # 对观测/奖励做归一化的向量包装器
 import os # 文件保存
 import time
-from robot_arm_env import RobotArmEnv
+from g1_arm_env import RobotArmEnv # <--- 1. 导入环境文件名称已更新
 import argparse # 命令行参数解析，配置超参/路径。
 import torch.nn as nn
 import signal
@@ -23,7 +23,7 @@ class SaveVecNormalizeCallback(BaseCallback):
     """
     在保存最佳模型时同时保存VecNormalize参数的回调函数
     """
-    def __init__(self, eval_callback, verbose=0): # verbose用来控制输出日志的内容，0时处于静默，训练过程中不输出任何信息到控制台（除了必要的警告和错误）。
+    def __init__(self, eval_callback, verbose=0):
         super(SaveVecNormalizeCallback, self).__init__(verbose)
         self.eval_callback = eval_callback
         self.best_mean_reward = -np.inf
@@ -37,8 +37,8 @@ class SaveVecNormalizeCallback(BaseCallback):
             if self.verbose > 0:
                 print("保存与最佳模型对应的VecNormalize参数")
             vec_normalize_path = "./logs/best_model"
-            os.makedirs(vec_normalize_path, exist_ok=True) # 如果存在目标目录，也不报错，直接跳过创建
-            self.model.get_vec_normalize_env().save(os.path.join(vec_normalize_path, "vec_normalize.pkl")) # .model 是指向正在训练的模型，对于这个模型进行返回内部封装的环境归一化器对象， 并将他保存
+            os.makedirs(vec_normalize_path, exist_ok=True)
+            self.model.get_vec_normalize_env().save(os.path.join(vec_normalize_path, "vec_normalize.pkl"))
         
         return True
 
@@ -69,8 +69,8 @@ class ManualInterruptCallback(BaseCallback):
             # 创建保存目录
             os.makedirs("./models/interrupted", exist_ok=True)
             
-            # 保存模型
-            self.model.save("./models/interrupted/td3_robot_arm_interrupted")
+            # 2. 模型保存路径名称更新
+            self.model.save("./models/interrupted/td3_g1_arm_interrupted")
             
             # 保存VecNormalize参数
             env = self.model.get_vec_normalize_env()
@@ -86,9 +86,9 @@ class ManualInterruptCallback(BaseCallback):
         return True
 
 
-def train_robot_arm():
+def train_g1_arm(): # <--- 3. 函数名称更新
     """
-    训练机械臂进行位置跟踪
+    训练宇树G1机械臂进行位置跟踪
     """
     print("创建机械臂环境...")
     
@@ -96,22 +96,18 @@ def train_robot_arm():
     env = make_vec_env(lambda: RobotArmEnv(), n_envs=1)
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
     
-    # 设置动作噪声，作用：在训练时为动作添加随机噪声，增加探索。原理：TD3 在策略输出上叠加噪声，帮助探索动作空间
-    ## action_space是动作空间，定义动作的取值范围和形状；.shape得到（7,）（如果是七维动作空间的话），[-1]取到动作维度数量
+    # 设置动作噪声
     n_actions = env.action_space.shape[-1]
-    ## 创建一个均值为0,标准差为2.5的噪声
-    action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=2.5 * np.ones(n_actions))
+    # 4. 动作噪声标准差增加到 4.0，以提高探索性（适应更大的动作空间）
+    action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=4.0 * np.ones(n_actions))
     
-    # 自定义TD3神经网络结构
-    # 这里我们定义一个更复杂的网络结构：
-    # Actor网络: [512, 512, 256]
-    # Critic网络: [512, 512, 256] (每个Q网络)
+    # 5. 自定义TD3神经网络结构 - 增加网络规模以应对 7 DoF 和 27 维状态
     policy_kwargs = dict(
         net_arch=dict(
-            pi=[512, 512, 256],  # Actor网络结构
-            qf=[512, 512, 256]   # Critic网络结构 (每个Q网络)
+            pi=[1024, 512, 256],  # Actor网络结构 (从 512 增加到 1024)
+            qf=[1024, 512, 256]   # Critic网络结构
         ),
-        activation_fn=nn.ReLU  # 使用ReLU激活函数
+        activation_fn=nn.ReLU
     )
     
     # 创建TD3模型
@@ -121,10 +117,10 @@ def train_robot_arm():
         tensorboard_log="./logs/",
         action_noise=action_noise,
         verbose=1,
-        device="auto",  # 自动选择设备(CUDA/CPU)
+        device="auto",
         learning_rate=3e-4,
-        buffer_size=3000000,
-        learning_starts=10000,
+        buffer_size=5000000,  # 6. 增大经验回放缓冲区
+        learning_starts=20000, # 7. 增大开始学习前的随机步数
         batch_size=256,
         tau=0.005,
         gamma=0.99,
@@ -133,15 +129,13 @@ def train_robot_arm():
         policy_delay=4,
         target_policy_noise=0.2,
         target_noise_clip=0.5,
-        policy_kwargs=policy_kwargs  # 使用自定义网络结构
+        policy_kwargs=policy_kwargs
     )
     
     # 创建评估环境和回调函数
-    ## make_vec_env创建向量化包装器，支持并行环境； lambda每次调用创建新的实例； n_envs并行环境数量
-    eval_env = make_vec_env(lambda: RobotArmEnv(), n_envs=1) # 定期评估模型性能，与训练环境分离，只是对评估环境进行向量化包装，后续可以用；
+    eval_env = make_vec_env(lambda: RobotArmEnv(), n_envs=1)
 
-    ## norm_obs是对观测归一化，norm_reward评估时，使用原始奖励，training=False 评估环境步更新归一化统计量，只用训练环境学到的参数，相当于不更新，只使用
-    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, training=False) # 进行归一化；为了稳定训练，加速收敛，评估一致性
+    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, training=False)
     # 加载训练环境的归一化参数到评估环境中
     eval_env.obs_rms = env.obs_rms
     
@@ -170,15 +164,15 @@ def train_robot_arm():
     
     # 训练模型，同时使用三个回调函数
     model.learn(
-        total_timesteps=5000000,
+        total_timesteps=10000000, # 8. 增大总训练步数
         callback=[eval_callback, save_vec_normalize_callback, manual_interrupt_callback],
-        tb_log_name="TD3_robot_arm_run",
+        tb_log_name="TD3_g1_arm_run", # 9. Tensorboard 日志名称更新
         log_interval=1000
     )
     
     # 保存归一化环境和最终模型
     env.save("./models/vec_normalize.pkl")
-    model.save("./models/td3_robot_arm_final")
+    model.save("./models/td3_g1_arm_final") # 10. 最终模型名称更新
     
     end_time = time.time()
     print(f"训练完成，耗时: {end_time - start_time:.2f}秒")
@@ -186,7 +180,7 @@ def train_robot_arm():
     return model, env
 
 
-def test_robot_arm(model_path="./models/td3_robot_arm_final", 
+def test_g1_arm(model_path="./models/td3_g1_arm_final", # 11. 测试函数名称及默认路径更新
                    normalize_path="./models/vec_normalize.pkl",
                    num_episodes=10):
     """
@@ -238,9 +232,9 @@ def test_robot_arm(model_path="./models/td3_robot_arm_final",
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train or test robot arm with TD3")
+    parser = argparse.ArgumentParser(description="Train or test G1 arm with TD3") # 12. 描述更新
     parser.add_argument("--test", action="store_true", help="Test the trained model")
-    parser.add_argument("--model-path", type=str, default="./models/td3_robot_arm_final", 
+    parser.add_argument("--model-path", type=str, default="./models/td3_g1_arm_final", 
                         help="Path to the model for testing")
     parser.add_argument("--normalize-path", type=str, default="./models/vec_normalize.pkl",
                         help="Path to the normalization parameters")
@@ -250,6 +244,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.test:
-        test_robot_arm(args.model_path, args.normalize_path, args.episodes)
+        test_g1_arm(args.model_path, args.normalize_path, args.episodes) # 13. 调用新的测试函数
     else:
-        train_robot_arm()
+        train_g1_arm() # 14. 调用新的训练函数
