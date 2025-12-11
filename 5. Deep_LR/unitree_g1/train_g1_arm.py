@@ -19,6 +19,70 @@ import signal
 import sys
 
 
+class PeriodicCheckpointCallback(BaseCallback):
+    """
+    定期保存模型检查点的回调函数
+    """
+    def __init__(self, save_freq=50000, name_prefix="td3_g1_arm", verbose=0):
+        """
+        参数:
+        - save_freq: 保存频率（步数）
+        - name_prefix: 文件名前缀
+        - verbose: 是否打印信息
+        """
+        super(PeriodicCheckpointCallback, self).__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = None  # 将在训练开始时动态设置
+        self.name_prefix = name_prefix
+        self.last_save = 0
+        
+    def _on_training_start(self) -> None:
+        """
+        训练开始时，从logger获取实际的TensorBoard日志目录
+        """
+        # 从logger获取实际的日志目录路径
+        if hasattr(self.model, 'logger') and self.model.logger is not None:
+            # 获取TensorBoard日志的完整路径
+            log_dir = self.model.logger.get_dir()
+            # 构建checkpoints目录路径
+            self.save_path = os.path.join(log_dir, "checkpoints")
+            if self.verbose > 0:
+                print(f"检查点将保存到: {self.save_path}")
+        else:
+            # 如果无法获取logger，使用默认路径
+            self.save_path = "./models/checkpoints"
+            if self.verbose > 0:
+                print(f"警告: 无法获取日志目录，使用默认路径: {self.save_path}")
+        
+    def _on_step(self) -> bool:
+        # 检查是否到了保存时间
+        if (self.num_timesteps - self.last_save) >= self.save_freq:
+            self.last_save = self.num_timesteps
+            
+            # 如果save_path还未设置，尝试再次获取
+            if self.save_path is None:
+                self._on_training_start()
+            
+            # 创建保存目录
+            os.makedirs(self.save_path, exist_ok=True)
+            
+            # 保存模型，文件名包含步数
+            model_name = f"{self.name_prefix}_step_{self.num_timesteps}"
+            model_file = os.path.join(self.save_path, model_name)
+            self.model.save(model_file)
+            
+            # 保存归一化参数
+            env = self.model.get_vec_normalize_env()
+            if env is not None:
+                normalize_file = os.path.join(self.save_path, f"vec_normalize_step_{self.num_timesteps}.pkl")
+                env.save(normalize_file)
+            
+            if self.verbose > 0:
+                print(f"已保存检查点: {model_file} (步数: {self.num_timesteps})")
+        
+        return True
+
+
 class SaveVecNormalizeCallback(BaseCallback):
     """
     在保存最佳模型时同时保存VecNormalize参数的回调函数
@@ -27,68 +91,93 @@ class SaveVecNormalizeCallback(BaseCallback):
         super(SaveVecNormalizeCallback, self).__init__(verbose)
         self.eval_callback = eval_callback
         self.best_mean_reward = -np.inf
+        self.best_model_path = None  # 将在训练开始时动态设置
+
+    def _on_training_start(self) -> None:
+        """
+        训练开始时，从logger获取实际的TensorBoard日志目录，并更新最佳模型保存路径
+        """
+        # 从logger获取实际的日志目录路径
+        if hasattr(self.model, 'logger') and self.model.logger is not None:
+            log_dir = self.model.logger.get_dir()
+            # 更新EvalCallback的最佳模型保存路径到日志目录
+            self.best_model_path = os.path.join(log_dir, "best_model")
+            self.eval_callback.best_model_save_path = self.best_model_path
+            if self.verbose > 0:
+                print(f"最佳模型将保存到: {self.best_model_path}")
+        else:
+            # 如果无法获取logger，使用默认路径
+            self.best_model_path = "./logs/best_model"
+            if self.verbose > 0:
+                print(f"警告: 无法获取日志目录，使用默认路径: {self.best_model_path}")
 
     def _on_step(self) -> bool:
         # 检查是否有新的最佳模型
         if self.eval_callback.best_mean_reward > self.best_mean_reward:
             self.best_mean_reward = self.eval_callback.best_mean_reward
             
-            # 保存VecNormalize参数到logs/best_model目录
+            # 如果best_model_path还未设置，尝试再次获取
+            if self.best_model_path is None:
+                self._on_training_start()
+            
+            # 保存VecNormalize参数到对应的日志目录
             if self.verbose > 0:
                 print("保存与最佳模型对应的VecNormalize参数")
-            vec_normalize_path = "./logs/best_model"
-            os.makedirs(vec_normalize_path, exist_ok=True)
-            self.model.get_vec_normalize_env().save(os.path.join(vec_normalize_path, "vec_normalize.pkl"))
+            os.makedirs(self.best_model_path, exist_ok=True)
+            self.model.get_vec_normalize_env().save(os.path.join(self.best_model_path, "vec_normalize.pkl"))
         
         return True
 
 
-class ManualInterruptCallback(BaseCallback):
-    """
-    允许手动中断训练并保存模型的回调函数
-    """
-    def __init__(self, verbose=0):
-        super(ManualInterruptCallback, self).__init__(verbose)
-        self.interrupted = False
-        # 设置信号处理器来捕获Ctrl+C
-        signal.signal(signal.SIGINT, self.signal_handler)
+# class ManualInterruptCallback(BaseCallback):
+#     """
+#     允许手动中断训练并保存模型的回调函数
+#     """
+#     def __init__(self, verbose=0):
+#         super(ManualInterruptCallback, self).__init__(verbose)
+#         self.interrupted = False
+#         # 设置信号处理器来捕获Ctrl+C
+#         signal.signal(signal.SIGINT, self.signal_handler)
         
-    def signal_handler(self, sig, frame):
-        print('\n接收到中断信号，正在保存模型...')
-        self.interrupted = True
-        # 保存当前模型
-        self.save_model()
-        print('模型已保存，退出程序')
-        sys.exit(0)
+#     def signal_handler(self, sig, frame):
+#         print('\n接收到中断信号，正在保存模型...')
+#         self.interrupted = True
+#         # 保存当前模型
+#         self.save_model()
+#         print('模型已保存，退出程序')
+#         sys.exit(0)
         
-    def save_model(self):
-        """
-        保存当前模型和环境归一化参数
-        """
-        if self.model is not None:
-            # 创建保存目录
-            os.makedirs("./models/interrupted", exist_ok=True)
+#     def save_model(self):
+#         """
+#         保存当前模型和环境归一化参数
+#         """
+#         if self.model is not None:
+#             # 创建保存目录
+#             os.makedirs("./models/interrupted", exist_ok=True)
             
-            # 2. 模型保存路径名称更新
-            self.model.save("./models/interrupted/td3_g1_arm_interrupted")
+#             # 2. 模型保存路径名称更新
+#             self.model.save("./models/interrupted/td3_g1_arm_interrupted")
             
-            # 保存VecNormalize参数
-            env = self.model.get_vec_normalize_env()
-            if env is not None:
-                env.save("./models/interrupted/vec_normalize.pkl")
+#             # 保存VecNormalize参数
+#             env = self.model.get_vec_normalize_env()
+#             if env is not None:
+#                 env.save("./models/interrupted/vec_normalize.pkl")
                 
-            print("已保存中断时的模型和参数到 ./models/interrupted/")
+#             print("已保存中断时的模型和参数到 ./models/interrupted/")
         
-    def _on_step(self) -> bool:
-        # 如果收到中断信号，停止训练
-        if self.interrupted:
-            return False
-        return True
+#     def _on_step(self) -> bool:
+#         # 如果收到中断信号，停止训练
+#         if self.interrupted:
+#             return False
+#         return True
 
 
-def train_g1_arm(): # <--- 3. 函数名称更新
+def train_g1_arm(save_freq=50000): # 添加保存频率参数
     """
     训练宇树G1机械臂进行位置跟踪
+    
+    参数:
+    - save_freq: 定期保存检查点的频率（步数），默认50000步
     """
     print("创建机械臂环境...")
     
@@ -141,35 +230,53 @@ def train_g1_arm(): # <--- 3. 函数名称更新
     
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path="./logs/best_model",
+        best_model_save_path= None,  # 初始路径，将在训练开始时被更新
         log_path="./logs/",
         eval_freq=5000,
         deterministic=True,
         render=False
     )
     
-    # 创建保存VecNormalize参数的回调函数
-    save_vec_normalize_callback = SaveVecNormalizeCallback(eval_callback, verbose=1)
     
-    # 创建手动中断回调函数
-    manual_interrupt_callback = ManualInterruptCallback(verbose=1)
+    # 定义TensorBoard日志名称（与tb_log_name保持一致）
+    tb_log_name = "TD3_g1_arm_run"
+    
+    # 创建定期保存检查点的回调函数（路径将在训练开始时动态确定）
+    periodic_checkpoint_callback = PeriodicCheckpointCallback(
+        save_freq=save_freq,
+        name_prefix="td3_g1_arm",
+        verbose=1
+    )
+    
+    # # 创建手动中断回调函数
+    # manual_interrupt_callback = ManualInterruptCallback(verbose=1)
     
     # 创建日志目录
     os.makedirs("./logs", exist_ok=True)
     os.makedirs("./models", exist_ok=True)
     
+    # 创建保存VecNormalize参数的回调函数（用于最佳模型）
+    save_vec_normalize_callback = SaveVecNormalizeCallback(eval_callback, verbose=1)
+
     print("开始训练...")
-    print("提示: 按 Ctrl+C 可以中途停止训练并保存最后一次模型数据")
+    print(f"定期保存频率: 每 {save_freq} 步保存一次检查点")
+    # print("提示: 按 Ctrl+C 可以中途停止训练并保存最后一次模型数据")
     start_time = time.time()
     
-    # 训练模型，同时使用三个回调函数
+    # 训练模型，同时使用四个回调函数
     model.learn(
         total_timesteps=10000000, # 8. 增大总训练步数
-        callback=[eval_callback, save_vec_normalize_callback, manual_interrupt_callback],
-        tb_log_name="TD3_g1_arm_run", # 9. Tensorboard 日志名称更新
+        callback=[
+            eval_callback, 
+            save_vec_normalize_callback, 
+            periodic_checkpoint_callback,  # 添加定期保存回调
+            # manual_interrupt_callback
+        ],
+        tb_log_name=tb_log_name, # 9. Tensorboard 日志名称更新
         log_interval=1000
     )
     
+
     # 保存归一化环境和最终模型
     env.save("./models/vec_normalize.pkl")
     model.save("./models/td3_g1_arm_final") # 10. 最终模型名称更新
@@ -240,10 +347,12 @@ if __name__ == "__main__":
                         help="Path to the normalization parameters")
     parser.add_argument("--episodes", type=int, default=10,
                         help="Number of episodes to test")
+    parser.add_argument("--save-freq", type=int, default=50000,
+                        help="Frequency (in timesteps) to save checkpoints during training")
     
     args = parser.parse_args()
     
     if args.test:
         test_g1_arm(args.model_path, args.normalize_path, args.episodes) # 13. 调用新的测试函数
     else:
-        train_g1_arm() # 14. 调用新的训练函数
+        train_g1_arm(save_freq=args.save_freq) # 传递保存频率参数

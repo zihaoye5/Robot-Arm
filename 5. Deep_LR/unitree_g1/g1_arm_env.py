@@ -159,9 +159,9 @@ class RobotArmEnv(gym.Env):
         # *** 2. 设置随机目标位置 (适应新的长方体基座，连接点在 Z=1.0m) ***
         # 目标范围缩小并居中：
         self.target_pos = np.array([
-            self.np_random.uniform(0.2, 0.5),    # X轴 (向前，从基座 0.1m 处开始伸出，保证可达)
-            self.np_random.uniform(-0.15, 0.35), # Y轴 (左右，绕着手臂连接点 Y=0.1m 处)
-            self.np_random.uniform(0.8, 1.2)     # Z轴 (高度，限制在连接点 1.0m 附近)
+            self.np_random.uniform(0.2, 0.4),    # X轴 (向前，从基座 0.1m 处开始伸出，保证可达)
+            self.np_random.uniform(-0.15, 0.25), # Y轴 (左右，绕着手臂连接点 Y=0.1m 处)
+            self.np_random.uniform(0.9, 1.2)     # Z轴 (高度，限制在连接点 1.0m 附近)
         ])
         
         self.success_threshold = 0.05  # 1cm 阈值
