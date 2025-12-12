@@ -91,90 +91,82 @@ class RobotArmEnv(gym.Env):
         
         return state.astype(np.float32)
 
-    # def reset(self, seed=None, options=None):
-    #     """
-    #     重置环境
-    #     """
-    #     super().reset(seed=seed)
-        
-    #     # 重置MuJoCo数据
-    #     mujoco.mj_resetData(self.model, self.data)
-        
-    #     # 5. 设置随机目标位置 (调整到 G1 左臂固定基座的工作空间)
-    #     # x轴 (向前): [0.1, 0.7]
-    #     # y轴 (左右): [-0.4, 0.4] 
-    #     # z轴 (高度): [0.8, 1.4]
-    #     self.target_pos = np.array([
-    #         self.np_random.uniform(0.1, 0.7),    # x轴
-    #         self.np_random.uniform(-0.4, 0.4),   # y轴
-    #         self.np_random.uniform(0.8, 1.4)        # z轴
-    #     ])
-        
-    #     self.success_threshold = 0.01  # 1cm 阈值
-        
-    #     # 重置步数计数器
-    #     self.step_count = 0
-    #     self.previous_distance = None
-    #     self.min_distance = None
-    #     # 确保尺寸与新的 self.nu 匹配
-    #     self.previous_torque = np.zeros(self.nu)
-    #     self.previous_joint_velocities = np.zeros(self.nu)
-        
-    #     # 重置阶段性奖励标记
-    #     self._phase_rewards_given = set()
-        
-    #     # 获取初始状态
-    #     state = self._get_state()
-        
-    #     return state, {}
+
+
     def reset(self, seed=None, options=None):
         """
-        重置环境
+        重置环境，将目标位置随机生成在特定范围的球壳前半球空间内。
         """
+        # 继承父类的 reset 方法并设置随机种子
         super().reset(seed=seed)
         
         # 重置MuJoCo数据
         mujoco.mj_resetData(self.model, self.data)
 
-        # *** 1. 设定一个更有利的初始姿态 (7个关节) ***
-        # 姿态：稍微向前、向外伸展，让手臂更容易探索工作空间。
-        # 关节顺序：pitch, roll, yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw (7 DoF)
-
-        ## 第9次训练,加上了初始关节位置,训练失败
+        # # *** 1. 设定一个更有利的初始姿态 (此处省略，保持不变) ***
         # initial_qpos = np.array([
-        #     -0.5,   # left_shoulder_pitch_joint: 向前伸 (-0.5 rad)
-        #      0.5,   # left_shoulder_roll_joint: 稍微外展 (0.5 rad)
-        #      0.0,   # left_shoulder_yaw_joint: 保持中立
-        #      1.0,   # left_elbow_joint: 肘部弯曲 (1.0 rad)
-        #      0.0,   # left_wrist_roll_joint: 保持中立
-        #      0.0,   # left_wrist_pitch_joint: 保持中立
-        #      0.0    # left_wrist_yaw_joint: 保持中立
+        #     -0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0 
         # ])
         
-        # # # 应用初始关节姿态
+        # # 应用初始关节姿态
         # self.data.qpos[:self.nu] = initial_qpos
         # # 强制 MuJoCo 更新一次状态，确保初始姿态生效
         # mujoco.mj_forward(self.model, self.data)
         
-        # *** 2. 设置随机目标位置 (适应新的长方体基座，连接点在 Z=1.0m) ***
-        # 目标范围缩小并居中：
+        # *** 2. 设置随机目标位置 (球壳前半球空间) ***
+        
+        # --- 手臂基座和长度参数 ---
+        # 手臂连接点绝对坐标 P_base = (0.1, 0.10022, 1.0)
+        BASE_POS_X = 0.1
+        BASE_POS_Y = 0.10022
+        BASE_POS_Z = 1.0
+        
+        # 限制参数
+        MAX_ARM_LENGTH = 0.42   # 最外圈半径 (手臂最大长度)
+        MIN_REACH_DIST = 0.2    # 最内圈半径 (20cm)
+        
+        # ----------------------------------------------------
+        # 在球坐标系中随机生成目标点 (以 P_base 为原点)
+        # ----------------------------------------------------
+        
+        # 1. 距离 (Radius, ρ): 在球壳范围 [0.2m, 0.42m] 内均匀采样
+        rho = self.np_random.uniform(MIN_REACH_DIST, MAX_ARM_LENGTH)
+        
+        # 2. 倾角 (Polar angle, φ): 与 Z 轴的夹角 (0到pi)
+        # 仍然均匀采样 cos(φ) 以确保点在 Z 轴上均匀分布
+        cos_phi = self.np_random.uniform(-1.0, 1.0)
+        phi = np.arccos(cos_phi)
+        
+        # 3. 方位角 (Azimuthal angle, θ): 限制在前半球 (X > 0)
+        # θ 范围从 -π/2 (-90°) 到 π/2 (90°)
+        # 这样可以保证转换后的 delta_x 始终 >= 0
+        theta = self.np_random.uniform(-np.pi / 2, np.pi / 2) 
+
+        # 4. 转换为相对笛卡尔坐标 (x', y', z')
+        # x' = ρ * sin(φ) * cos(θ)
+        # y' = ρ * sin(φ) * sin(θ)
+        # z' = ρ * cos(φ)
+        
+        delta_x = rho * np.sin(phi) * np.cos(theta)
+        delta_y = rho * np.sin(phi) * np.sin(theta)
+        delta_z = rho * np.cos(phi)
+
+        # 5. 目标点的绝对坐标 = 基座坐标 + 相对坐标
         self.target_pos = np.array([
-            self.np_random.uniform(0.2, 0.4),    # X轴 (向前，从基座 0.1m 处开始伸出，保证可达)
-            self.np_random.uniform(-0.15, 0.25), # Y轴 (左右，绕着手臂连接点 Y=0.1m 处)
-            self.np_random.uniform(0.9, 1.2)     # Z轴 (高度，限制在连接点 1.0m 附近)
+            BASE_POS_X + delta_x,  # X 轴：BASE_POS_X (0.1) 加上 delta_x (>= 0)
+            BASE_POS_Y + delta_y,
+            BASE_POS_Z + delta_z
         ])
         
-        self.success_threshold = 0.05  # 1cm 阈值
+        # --- 3. 环境参数和状态重置 (保持不变) ---
         
-        # 重置步数计数器
+        self.success_threshold = 0.05
         self.step_count = 0
         self.previous_distance = None
         self.min_distance = None
-        # 确保尺寸与新的 self.nu (7) 匹配
-        self.previous_torque = np.zeros(self.nu)
-        self.previous_joint_velocities = np.zeros(self.nu)
         
-        # 重置阶段性奖励标记
+        self.previous_torque = np.zeros(self.nu) 
+        self.previous_joint_velocities = np.zeros(self.nu)
         self._phase_rewards_given = set()
         
         # 获取初始状态
