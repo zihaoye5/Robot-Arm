@@ -117,13 +117,13 @@ class RobotArmEnv(gym.Env):
         
         # --- 手臂基座和长度参数 ---
         # 手臂连接点绝对坐标 P_base = (0.1, 0.10022, 1.0)
-        BASE_POS_X = 0.1
+        BASE_POS_X = 0.05
         BASE_POS_Y = 0.10022
         BASE_POS_Z = 1.0
         
         # 限制参数
-        MAX_ARM_LENGTH = 0.42   # 最外圈半径 (手臂最大长度)
-        MIN_REACH_DIST = 0.2    # 最内圈半径 (20cm)
+        MAX_ARM_LENGTH = 0.4   # 最外圈半径 (手臂最大长度)
+        MIN_REACH_DIST = 0.15    # 最内圈半径 (20cm)
         
         # ----------------------------------------------------
         # 在球坐标系中随机生成目标点 (以 P_base 为原点)
@@ -132,24 +132,19 @@ class RobotArmEnv(gym.Env):
         # 1. 距离 (Radius, ρ): 在球壳范围 [0.2m, 0.42m] 内均匀采样
         rho = self.np_random.uniform(MIN_REACH_DIST, MAX_ARM_LENGTH)
         
-        # 2. 倾角 (Polar angle, φ): 与 Z 轴的夹角 (0到pi)
-        # 仍然均匀采样 cos(φ) 以确保点在 Z 轴上均匀分布
-        cos_phi = self.np_random.uniform(-1.0, 1.0)
-        phi = np.arccos(cos_phi)
         
-        # 3. 方位角 (Azimuthal angle, θ): 限制在前半球 (X > 0)
-        # θ 范围从 -π/2 (-90°) 到 π/2 (90°)
-        # 这样可以保证转换后的 delta_x 始终 >= 0
-        theta = self.np_random.uniform(-np.pi / 2, np.pi / 2) 
+        # phi,与y轴的夹角
+        phi  = self.np_random.uniform(np.pi/3, np.pi * 2 / 3)
+        # theta, 与z轴的夹角
+        theta = self.np_random.uniform(np.pi/2, 5/6 * np.pi)
+
+
 
         # 4. 转换为相对笛卡尔坐标 (x', y', z')
-        # x' = ρ * sin(φ) * cos(θ)
-        # y' = ρ * sin(φ) * sin(θ)
-        # z' = ρ * cos(φ)
         
-        delta_x = rho * np.sin(phi) * np.cos(theta)
-        delta_y = rho * np.sin(phi) * np.sin(theta)
-        delta_z = rho * np.cos(phi)
+        delta_x = rho * np.sin(phi) * np.sin(theta)
+        delta_y = rho * np.cos(phi) * np.sin(theta)
+        delta_z = rho * np.cos(theta)
 
         # 5. 目标点的绝对坐标 = 基座坐标 + 相对坐标
         self.target_pos = np.array([
