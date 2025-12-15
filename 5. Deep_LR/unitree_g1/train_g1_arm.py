@@ -23,7 +23,7 @@ class PeriodicCheckpointCallback(BaseCallback):
     """
     定期保存模型检查点的回调函数
     """
-    def __init__(self, save_freq=50000, name_prefix="td3_g1_arm", verbose=0):
+    def __init__(self, save_freq=100000, name_prefix="td3_g1_arm", verbose=0):
         """
         参数:
         - save_freq: 保存频率（步数）
@@ -56,7 +56,7 @@ class PeriodicCheckpointCallback(BaseCallback):
         
     def _on_step(self) -> bool:
         # 检查是否到了保存时间
-        if (self.num_timesteps - self.last_save) >= self.save_freq:
+        if (self.num_timesteps - self.last_save) >= self.save_freq: 
             self.last_save = self.num_timesteps
             
             # 如果save_path还未设置，尝试再次获取
@@ -129,60 +129,19 @@ class SaveVecNormalizeCallback(BaseCallback):
         return True
 
 
-# class ManualInterruptCallback(BaseCallback):
-#     """
-#     允许手动中断训练并保存模型的回调函数
-#     """
-#     def __init__(self, verbose=0):
-#         super(ManualInterruptCallback, self).__init__(verbose)
-#         self.interrupted = False
-#         # 设置信号处理器来捕获Ctrl+C
-#         signal.signal(signal.SIGINT, self.signal_handler)
-        
-#     def signal_handler(self, sig, frame):
-#         print('\n接收到中断信号，正在保存模型...')
-#         self.interrupted = True
-#         # 保存当前模型
-#         self.save_model()
-#         print('模型已保存，退出程序')
-#         sys.exit(0)
-        
-#     def save_model(self):
-#         """
-#         保存当前模型和环境归一化参数
-#         """
-#         if self.model is not None:
-#             # 创建保存目录
-#             os.makedirs("./models/interrupted", exist_ok=True)
-            
-#             # 2. 模型保存路径名称更新
-#             self.model.save("./models/interrupted/td3_g1_arm_interrupted")
-            
-#             # 保存VecNormalize参数
-#             env = self.model.get_vec_normalize_env()
-#             if env is not None:
-#                 env.save("./models/interrupted/vec_normalize.pkl")
-                
-#             print("已保存中断时的模型和参数到 ./models/interrupted/")
-        
-#     def _on_step(self) -> bool:
-#         # 如果收到中断信号，停止训练
-#         if self.interrupted:
-#             return False
-#         return True
 
 
-def train_g1_arm(save_freq=50000): # 添加保存频率参数
+def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000): # 添加保存频率参数
     """
     训练宇树G1机械臂进行位置跟踪
     
     参数:
-    - save_freq: 定期保存检查点的频率（步数），默认50000步
+    - save_freq: 定期保存检查点的频率（步数），默认100000步
     """
     print("创建机械臂环境...")
     
     # 创建环境并使用VecNormalize进行归一化
-    env = make_vec_env(lambda: RobotArmEnv(), n_envs=1)
+    env = make_vec_env(lambda: RobotArmEnv(), n_envs=n_envs)  ## n_envs是make_vec_env的参数名
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
     
     # 设置动作噪声
@@ -214,7 +173,8 @@ def train_g1_arm(save_freq=50000): # 添加保存频率参数
         tau=0.001,
         gamma=0.99,
         train_freq=1,
-        gradient_steps=1,
+        # gradient_steps=1,
+        gradient_steps=n_envs,  ## 由于num_envs增加了之后,同一时间获得的数据量也增加了,如果不增加更新学习频率,会导致数据池中的数据实效性降低
         policy_delay=4,
         target_policy_noise=0.2,
         target_noise_clip=0.5,
@@ -222,7 +182,8 @@ def train_g1_arm(save_freq=50000): # 添加保存频率参数
     )
     
     # 创建评估环境和回调函数
-    eval_env = make_vec_env(lambda: RobotArmEnv(), n_envs=1)
+    ## 这里的nums_env通常保持 1
+    eval_env = make_vec_env(lambda: RobotArmEnv(), n_envs = 1)
 
     eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False, training=False)
     # 加载训练环境的归一化参数到评估环境中
@@ -265,7 +226,7 @@ def train_g1_arm(save_freq=50000): # 添加保存频率参数
     
     # 训练模型，同时使用四个回调函数
     model.learn(
-        total_timesteps=10000000, # 8. 增大总训练步数
+        total_timesteps=num_iterations, # 8. 增大总训练步数
         callback=[
             eval_callback, 
             save_vec_normalize_callback, 
@@ -347,12 +308,16 @@ if __name__ == "__main__":
                         help="Path to the normalization parameters")
     parser.add_argument("--episodes", type=int, default=10,
                         help="Number of episodes to test")
-    parser.add_argument("--save-freq", type=int, default=50000,
+    parser.add_argument("--save-freq", type=int, default=100000,
                         help="Frequency (in timesteps) to save checkpoints during training")
-    
+    parser.add_argument("--n_envs", type = int, default=5, 
+                        help="The number of the models trained in the envs at the same time")
+    parser.add_argument("--num_envs", type=int,default=10000000,
+                        help="Total numbers of iteration for single training")
+
     args = parser.parse_args()
     
     if args.test:
         test_g1_arm(args.model_path, args.normalize_path, args.episodes) # 13. 调用新的测试函数
     else:
-        train_g1_arm(save_freq=args.save_freq) # 传递保存频率参数
+        train_g1_arm(save_freq=args.save_freq, n_envs=args.n_envs) # 传递保存频率参数
