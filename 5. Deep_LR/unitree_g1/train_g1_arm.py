@@ -3,7 +3,10 @@
 使用Stable-Baselines3的TD3算法训练宇树G1机械臂（7 DoF）进行位置跟踪
 """
 
+from locale import normalize
 import numpy as np
+from numpy.linalg import norm
+from numpy.random import normal
 import gymnasium as gym
 from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise # 添加高斯噪声，提升探索性
@@ -17,6 +20,7 @@ import argparse # 命令行参数解析，配置超参/路径。
 import torch.nn as nn
 import signal
 import sys
+from stable_baselines3.common.logger import configure
 
 
 class PeriodicCheckpointCallback(BaseCallback):
@@ -129,14 +133,146 @@ class SaveVecNormalizeCallback(BaseCallback):
         return True
 
 
+class TD3Loader:
+    """
+    负责加载或初始化 Stable-Baselines3 TD3 模型和 VecNormalize 环境的工具类。
+    """
+
+    def __init__(self, RobotArmEnv, policy_kwargs, action_noise, nu, common_hyperparams):
+        """
+        初始化加载器，保存所有创建模型所需的参数
+        """
+        self.RobotArmEnv = RobotArmEnv
+        self.policy_kwargs = policy_kwargs
+        self.action_noise = action_noise
+        self.nu = nu
+        self.hyperparams = common_hyperparams
+
+    def _get_normalize_path(self, load_path):
+        """
+        根据模型路径推断 VecNormalize 文件的路径
+        """
+        load_dir = os.path.dirname(load_path)
+
+        # 提取步数
+        try:
+            step_num = load_path.split('_step_')[-1].split('.')[0]
+            normalize_file = os.path.join(load_dir, f"vec_normalize_step_{step_num}.pkl")
+            return normalize_file
+            # normalize_file = os.path.join(load_dir, "vec_normalize.pkl")
+        except:
+            # 如果路径格式不匹配，返回None
+            return None
+
+    def load_or_create(self, n_envs, load_path = None):
+        """
+        加载环境、归一化参数，然后加载或创建 TD3 模型。
+
+        Args:
+            n_envs (int): 并行环境数量。
+            load_path (str, optional): 模型检查点路径。
+
+        Returns:
+            tuple: (model, env)
+        """
+        # 创建或加载 VecNormalize 环境
+        if load_path:
+            normalize_file = self._get_normalize_path(load_path)
+        else:
+            normalize_file = None
+        
+        if normalize_file and os.path.exists(normalize_file):
+            print(f"加载归一化参数：{normalize_file}")
+            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs)
+            env = VecNormalize.load(normalize_file, env)
+            env.reset()
+        else:
+            if normalize_file:
+                print(f"警告：未找到归一化文件 {normalize_file}。")
+            print("创建全新的归一化环境")
+            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs)
+            env = VecNormalize(env, norm_obs = True, norm_reward = True)
 
 
-def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000): # 添加保存频率参数
+        # 1. 定义 TD3 构造函数所需的通用参数，从 self.hyperparams 复制
+        td3_kwargs = self.hyperparams.copy()
+
+        # 2. 覆盖日志路径（用于继续训练）
+        if load_path and os.path.exists(load_path):
+            try:
+                # 假设路径结构为: ./logs/RUN_NAME/.../model.zip
+                old_run_dir = os.path.dirname(os.path.dirname(load_path)) 
+                
+                if "logs" in old_run_dir:
+                    run_name = os.path.basename(old_run_dir)
+                    
+                    # 【修正 2A】强制设置 TensorBoard Log Path 的父目录
+                    td3_kwargs['tensorboard_log'] = os.path.dirname(old_run_dir) # 例如：./logs/
+                    
+                    # 【修正 2B】强制设置 tb_log_name，阻止自增
+                    td3_kwargs['tb_log_name'] = run_name 
+                    print(f"日志将继续记录到旧目录: {os.path.join(td3_kwargs['tensorboard_log'], run_name)}")
+                
+            except Exception as e:
+                print(f"强制设置日志路径失败: {e}")
+
+        
+        # 加载或创建模型
+        if load_path and os.path.exists(load_path):
+            print(f"从checkpoint开始训练: {load_path}")
+            
+        
+            # 使用TD3_loader 加载参数,并覆盖关键参数
+            model = TD3.load(
+                load_path,
+                env = env,
+                # 重新应用超参数，确保新环境和训练环境保持一致
+                policy_kwargs = self.policy_kwargs,
+                action_noise = self.action_noise,
+                **td3_kwargs # 展开公共超参数
+            )
+            # 确保 gradient_steps 和 num_timessteps 正确设置
+            model.gradient_steps = n_envs
+            print(f"模型当前步数： {model.num_timesteps}")
+
+            # 【修正 3B】模型加载成功后，必须再次手动设置 Logger，这是阻止自增的关键！
+            if 'tb_log_name' in td3_kwargs:
+                log_path_base = td3_kwargs.get('tensorboard_log', './logs/')
+                final_log_path = os.path.join(log_path_base, td3_kwargs['tb_log_name'])
+                
+                # 重新配置 Logger，使用我们解析出的旧路径
+                new_logger = configure(final_log_path, ["stdout", "tensorboard"])
+                model.set_logger(new_logger)
+                print(f"Logger 强制设置为: {final_log_path}")
+
+        else:
+            if load_path:
+                print(f"错误: 模型文件 {load_path} 不存在，创建新模型。")
+
+            print("创建新的 TD3 模型。")
+            
+            # 创建新模型时，直接使用所有超参数
+            model = TD3(
+                "MlpPolicy",
+                env,
+                action_noise=self.action_noise,
+                policy_kwargs=self.policy_kwargs,
+                **self.hyperparams
+            )
+            # 确保 gradient_steps 正确设置
+            model.gradient_steps = n_envs 
+        
+        return model, env 
+
+
+
+def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000, load_path = None): # 添加保存频率参数
     """
     训练宇树G1机械臂进行位置跟踪
     
     参数:
     - save_freq: 定期保存检查点的频率（步数），默认100000步
+    - load_path: 如果有想要继续的训练，则可以有输入，没有的话默认为none
     """
     print("创建机械臂环境...")
     
@@ -145,7 +281,8 @@ def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000): # 添加�
     env = VecNormalize(env, norm_obs=True, norm_reward=True)
     
     # 设置动作噪声
-    n_actions = env.action_space.shape[-1]
+    # n_actions = env.action_space.shape[-1]
+    n_actions = 7
     # 4. 动作噪声标准差增加到 4.0，以提高探索性（适应更大的动作空间）
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=6.0 * np.ones(n_actions))
     
@@ -158,29 +295,58 @@ def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000): # 添加�
         activation_fn=nn.ReLU
     )
     
-    # 创建TD3模型
-    model = TD3(
-        "MlpPolicy",
-        env,
+    # # 创建TD3模型
+    # model = TD3(
+    #     "MlpPolicy",
+    #     env,
+    #     tensorboard_log="./logs/",
+    #     action_noise=action_noise,
+    #     verbose=1,
+    #     device="auto",
+    #     learning_rate=6e-5,
+    #     buffer_size=5000000,  # 6. 增大经验回放缓冲区
+    #     learning_starts=20000, # 7. 增大开始学习前的随机步数
+    #     batch_size=256,
+    #     tau=0.001,
+    #     gamma=0.99,
+    #     train_freq=1,
+    #     # gradient_steps=1,
+    #     gradient_steps=n_envs,  ## 由于n_envs增加了之后,同一时间获得的数据量也增加了,如果不增加更新学习频率,会导致数据池中的数据实效性降低
+    #     policy_delay=4,
+    #     target_policy_noise=0.2,
+    #     target_noise_clip=0.5,
+    #     policy_kwargs=policy_kwargs
+    # )
+
+    # TD3 公共超参数
+    common_hyperparams = dict(
         tensorboard_log="./logs/",
-        action_noise=action_noise,
-        verbose=1,
         device="auto",
         learning_rate=6e-5,
-        buffer_size=5000000,  # 6. 增大经验回放缓冲区
-        learning_starts=20000, # 7. 增大开始学习前的随机步数
+        buffer_size=5000000,
+        learning_starts=20000,
         batch_size=256,
         tau=0.001,
         gamma=0.99,
-        train_freq=1,
-        # gradient_steps=1,
-        gradient_steps=n_envs,  ## 由于num_envs增加了之后,同一时间获得的数据量也增加了,如果不增加更新学习频率,会导致数据池中的数据实效性降低
+        train_freq=(1, "step"),
+        # gradient_steps 将由 Loader 根据 n_envs 覆盖，这里设置一个默认值或不设置
+        gradient_steps=n_envs,  
         policy_delay=4,
         target_policy_noise=0.2,
         target_noise_clip=0.5,
-        policy_kwargs=policy_kwargs
+        verbose=1,
     )
-    
+    # 实例化 TD3Loader
+    loader = TD3Loader(
+        RobotArmEnv=RobotArmEnv, 
+        policy_kwargs=policy_kwargs,
+        action_noise=action_noise,
+        nu=n_actions,
+        common_hyperparams=common_hyperparams
+    )
+
+    model, env = loader.load_or_create(n_envs = n_envs, load_path = load_path)
+
     # 创建评估环境和回调函数
     ## 这里的nums_env通常保持 1
     eval_env = make_vec_env(lambda: RobotArmEnv(), n_envs = 1)
@@ -227,6 +393,7 @@ def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000): # 添加�
     # 训练模型，同时使用四个回调函数
     model.learn(
         total_timesteps=num_iterations, # 8. 增大总训练步数
+        reset_num_timesteps = False if load_path else True,
         callback=[
             eval_callback, 
             save_vec_normalize_callback, 
@@ -312,12 +479,14 @@ if __name__ == "__main__":
                         help="Frequency (in timesteps) to save checkpoints during training")
     parser.add_argument("--n_envs", type = int, default=5, 
                         help="The number of the models trained in the envs at the same time")
-    parser.add_argument("--num_envs", type=int,default=10000000,
+    parser.add_argument("--num_iterations", type=int,default=10000000,
                         help="Total numbers of iteration for single training")
+    parser.add_argument("--load_path", type=str,default=None,
+                        help="The path for the checkpoint that you want to continue")
 
     args = parser.parse_args()
     
     if args.test:
         test_g1_arm(args.model_path, args.normalize_path, args.episodes) # 13. 调用新的测试函数
     else:
-        train_g1_arm(save_freq=args.save_freq, n_envs=args.n_envs) # 传递保存频率参数
+        train_g1_arm(save_freq=args.save_freq, n_envs=args.n_envs,num_iterations=args.num_iterations, load_path=args.load_path) # 传递保存频率参数
