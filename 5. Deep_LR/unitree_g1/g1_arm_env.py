@@ -18,7 +18,7 @@ class RobotArmEnv(gym.Env):
         - render_mode: 渲染模式
         """
         # 1. 加载新的 MuJoCo 模型
-        self.model = mujoco.MjModel.from_xml_path("robot_arm_g1.xml")
+        self.model = mujoco.MjModel.from_xml_path("robot_arm_g1_inspire.xml")
         self.data = mujoco.MjData(self.model)
         
         # 获取关节数量 (应为 7)
@@ -103,26 +103,13 @@ class RobotArmEnv(gym.Env):
         # 重置MuJoCo数据
         mujoco.mj_resetData(self.model, self.data)
 
-        # # *** 1. 设定一个更有利的初始姿态 (此处省略，保持不变) ***
-        # initial_qpos = np.array([
-        #     -0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0 
-        # ])
-        
-        # # 应用初始关节姿态
-        # self.data.qpos[:self.nu] = initial_qpos
-        # # 强制 MuJoCo 更新一次状态，确保初始姿态生效
-        # mujoco.mj_forward(self.model, self.data)
-        
-        # *** 2. 设置随机目标位置 (球壳前半球空间) ***
-        
-        # --- 手臂基座和长度参数 ---
-        # 手臂连接点绝对坐标 P_base = (0.1, 0.10022, 1.0)
+
         BASE_POS_X = 0.05
         BASE_POS_Y = 0.10022
         BASE_POS_Z = 1.0
         
         # 限制参数
-        MAX_ARM_LENGTH = 0.4   # 最外圈半径 (手臂最大长度)
+        MAX_ARM_LENGTH = 0.55   # 最外圈半径 (手臂最大长度)
         MIN_REACH_DIST = 0.15    # 最内圈半径 (20cm)
         
         # ----------------------------------------------------
@@ -134,7 +121,7 @@ class RobotArmEnv(gym.Env):
         
         
         # phi,与y轴的夹角
-        phi  = self.np_random.uniform(np.pi/3, np.pi * 2 / 3)
+        phi  = self.np_random.uniform(np.pi/4, np.pi * 3 / 4)
         # theta, 与z轴的夹角
         theta = self.np_random.uniform(np.pi/2, 5/6 * np.pi)
 
@@ -183,7 +170,7 @@ class RobotArmEnv(gym.Env):
         
         # 应用动作（扭矩），使用新的动作限制
         action = np.clip(action, -25.0, 25.0)
-        self.data.ctrl[:self.nu] = action
+        self.data.ctrl[:self.nu] = action   # 将裁减过的action放到动作位置用于下一步的执行
         
         # 仿真一步
         mujoco.mj_step(self.model, self.data)
@@ -224,6 +211,33 @@ class RobotArmEnv(gym.Env):
         base_distance_penalty = -distance * 0.5
         # base_distance_penalty = -distance ** 0.5 * 0.8
 
+
+        ########################################################
+        ## 增加手腕处y轴与ee_site与target形成的向量之间的夹角小于60度的约束奖励
+        palm_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "inhand_base_link")
+        R_EE = self.data.xmat[palm_body_id].reshape(3, 3)
+
+        # 1. 计算目标方向向量，从ee_site指向目标位置
+        V_Desired = self.target_pos - ee_pos
+        V_Desired_norm = np.linalg.norm(V_Desired)
+        V_Desired_normalized = V_Desired / (V_Desired_norm + 1e-6)
+
+        # 2. 掌心朝向
+        V_Palm = R_EE[:, -1]
+
+        # 3. 计算对齐度
+        alignmemt_cos = np.dot(V_Palm, V_Desired_normalized)
+
+        w_orient_base =  10 # 基础奖励系数，可调
+        w_distance_scaling = np.exp(-10 * distance)
+
+        orientation_reward = w_orient_base * (max(0, alignmemt_cos) **2) * w_distance_scaling
+        
+        if alignmemt_cos < 0.5:
+            orientation_reward -= 0.5 * w_distance_scaling
+        #######################################################
+
+
         
         # 阶段性距离奖励（一次性）
         phase_distance_reward = 0.0
@@ -242,7 +256,7 @@ class RobotArmEnv(gym.Env):
         #     close_range_bonus = 3 * (0.01 - distance)/0.01
         
         # 综合距离奖励
-        reward += improvement_reward + base_distance_penalty + phase_distance_reward + close_range_bonus
+        reward += improvement_reward + base_distance_penalty + phase_distance_reward + close_range_bonus + orientation_reward
         
         # 速度奖励 - 鼓励在整个过程中保持适中的速度
         ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")

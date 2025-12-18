@@ -92,7 +92,6 @@
                     <geom type="mesh" mesh="left_wrist_yaw_link" class="visual" />
 
                     <!-- ================= HAND MOUNT ================= -->
-                    <!-- wrist->hand 你已确认是正确的，所以这里保持不动 -->
                     <body name="inhand_mount"
                           pos="0.04 0.002 0"
                           euler="0 1.57 3.1415926">
@@ -107,7 +106,7 @@
                         <geom type="mesh" mesh="inhand_base_link" class="visual"/>
                         <geom type="mesh" mesh="inhand_base_link" class="collision"/>
 
-                        <site name="hand_forward"
+                        <site name="ee_site"
                               pos="0 0.02 0.12"
                               size="0.006"
                               type="sphere"
