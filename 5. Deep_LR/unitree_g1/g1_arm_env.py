@@ -18,7 +18,8 @@ class RobotArmEnv(gym.Env):
         - render_mode: 渲染模式
         """
         # 1. 加载新的 MuJoCo 模型
-        self.model = mujoco.MjModel.from_xml_path("robot_arm_g1_inspire.xml")
+        # self.model = mujoco.MjModel.from_xml_path("robot_arm_g1_inspire.xml")
+        self.model = mujoco.MjModel.from_xml_path("g1_left_arm_inspire.xml")
         self.data = mujoco.MjData(self.model)
         
         # 获取关节数量 (应为 7)
@@ -104,13 +105,13 @@ class RobotArmEnv(gym.Env):
         mujoco.mj_resetData(self.model, self.data)
 
 
-        BASE_POS_X = 0.05
-        BASE_POS_Y = 0.10022
-        BASE_POS_Z = 1.0
+        BASE_POS_X = 0.00
+        BASE_POS_Y = 0.138
+        BASE_POS_Z = 1.071
         
         # 限制参数
-        MAX_ARM_LENGTH = 0.55   # 最外圈半径 (手臂最大长度)
-        MIN_REACH_DIST = 0.15    # 最内圈半径 (20cm)
+        MAX_ARM_LENGTH = 0.54   # 最外圈半径 (手臂最大长度)
+        MIN_REACH_DIST = 0.20    # 最内圈半径 (20cm)
         
         # ----------------------------------------------------
         # 在球坐标系中随机生成目标点 (以 P_base 为原点)
@@ -229,7 +230,7 @@ class RobotArmEnv(gym.Env):
         alignmemt_cos = np.dot(V_Palm, V_Desired_normalized)
 
         w_orient_base =  10 # 基础奖励系数，可调
-        w_distance_scaling = np.exp(-10 * distance)
+        w_distance_scaling = np.exp(-5 * distance)
 
         orientation_reward = w_orient_base * (max(0, alignmemt_cos) **2) * w_distance_scaling
         
@@ -251,9 +252,6 @@ class RobotArmEnv(gym.Env):
 
         # 近距离持续奖励
         close_range_bonus = 0.0
-        # if distance < 0.01:
-        #     # 距离越近奖励越高
-        #     close_range_bonus = 3 * (0.01 - distance)/0.01
         
         # 综合距离奖励
         reward += improvement_reward + base_distance_penalty + phase_distance_reward + close_range_bonus + orientation_reward
@@ -279,10 +277,37 @@ class RobotArmEnv(gym.Env):
         # 碰撞惩罚 - 检查是否有接触
         collision_penalty = 0.0
         collision_detected = False
+        # for i in range(self.data.ncon):
+        #     # 如果检测到碰撞，给予惩罚
+        #     collision_penalty -= 5000.0
+        #     collision_detected = True
+
+        # 遍历 MuJoCo 检测到的所有接触点
         for i in range(self.data.ncon):
-            # 如果检测到碰撞，给予惩罚
-            collision_penalty -= 5000.0
-            collision_detected = True
+            contact = self.data.contact[i]
+            
+            # 获取发生碰撞的两个几何体（geom）所属的 Body ID
+            body1_id = self.model.geom_bodyid[contact.geom1]
+            body2_id = self.model.geom_bodyid[contact.geom2]
+            
+            # 判定规则：
+            # 1. 忽略 body1 和 body2 是同一个物体的情况（自碰撞）
+            # 2. 忽略 body1 是 body2 的直接父级的情况
+            # 3. 忽略 body2 是 body1 的直接父级的情况
+            is_parent_child = (
+                body1_id == body2_id or 
+                self.model.body_parentid[body1_id] == body2_id or 
+                self.model.body_parentid[body2_id] == body1_id
+            )
+            
+            # 如果不是父子级关系，说明是真正的非法碰撞（如手撞到了胸口，或手臂穿透了腿部）
+            if not is_parent_child:
+                # name1 = self.model.geom(contact.geom1).name
+                # name2 = self.model.geom(contact.geom2).name
+                # print(f"DEBUG: 非法碰撞发生! {name1} <--> {name2}")
+                collision_detected = True
+                collision_penalty -= 5000.0  # 给予显著的惩罚
+                break  # 只要发现一处非法碰撞即可停止检测
             
         reward += collision_penalty
         
@@ -321,9 +346,19 @@ class RobotArmEnv(gym.Env):
             reward += speed_reward_on_success
         
         # 如果发生碰撞，也结束episode
+        # if collision_detected:
+        #     reward += -setp_penalty*(max_steps - self.step_count) # 扣除剩余的步数惩罚，防止自杀
+        #     done = True
+
+
+
+        # 只有在发生非父子级碰撞时才重置环境
+        # 如果发生碰撞，也结束episode
         if collision_detected:
-            reward += -setp_penalty*(max_steps - self.step_count) # 扣除剩余的步数惩罚，防止自杀
+            reward += -setp_penalty * (max_steps - self.step_count)
             done = True
+
+
             
         truncated = self.step_count >= max_steps  # 最大步数限制
         
