@@ -159,210 +159,121 @@ class RobotArmEnv(gym.Env):
 
         
 
+
     def step(self, action):
-        """
-        执行动作并返回结果
-        """
-        # 保存当前扭矩作为上一时刻的扭矩
-        self.previous_torque = self.data.ctrl[:self.nu].copy()
-        
-        # 保存当前关节速度作为上一时刻的关节速度
-        self.previous_joint_velocities = self.data.qvel[:self.nu].copy()
-        
-        # 应用动作（扭矩），使用新的动作限制
-        action = np.clip(action, -25.0, 25.0)
-        self.data.ctrl[:self.nu] = action   # 将裁减过的action放到动作位置用于下一步的执行
-        
-        # 仿真一步
-        mujoco.mj_step(self.model, self.data)
-        
-        # 更新步数计数器
-        self.step_count += 1
-
-        # 最大步数
-        max_steps = 3000
-
-        # 获取新状态
-        state = self._get_state()
-        
-        # 计算奖励
-        ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
-        ee_pos = self.data.site_xpos[ee_site_id].copy()
-        distance = np.linalg.norm(ee_pos - self.target_pos)
-        reward = 0
-
-        # 时间奖励 - 鼓励更快完成任务
-        # 步数惩罚系数
-        setp_penalty = 0.05  # 每步扣除0.1奖励，鼓励快速完成任务
-        reward -= setp_penalty
-
-        # 基础距离奖励 (原逻辑保持不变，但数值可能需要根据新环境微调)
-        if self.min_distance is None:
-            self.min_distance = distance
-            improvement_reward = 0
-        elif distance < self.min_distance: # 距离变更近时给予奖励
-            improvement_reward = 1 * (self.min_distance - distance)
-            self.min_distance = distance
-        elif distance > self.previous_distance: # 距离变更远时给予惩罚
-            improvement_reward = -0.8 * (distance - self.previous_distance)
-        else:
-            improvement_reward = 0
-        self.previous_distance = distance
-        # 基础距离惩罚
-        base_distance_penalty = -distance * 0.5
-        # base_distance_penalty = -distance ** 0.5 * 0.8
-
-
-        ########################################################
-        ## 增加手腕处y轴与ee_site与target形成的向量之间的夹角小于60度的约束奖励
-        palm_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "inhand_base_link")
-        R_EE = self.data.xmat[palm_body_id].reshape(3, 3)
-
-        # 1. 计算目标方向向量，从ee_site指向目标位置
-        V_Desired = self.target_pos - ee_pos
-        V_Desired_norm = np.linalg.norm(V_Desired)
-        V_Desired_normalized = V_Desired / (V_Desired_norm + 1e-6)
-
-        # 2. 掌心朝向
-        V_Palm = R_EE[:, -1]
-
-        # 3. 计算对齐度
-        alignmemt_cos = np.dot(V_Palm, V_Desired_normalized)
-
-        w_orient_base =  10 # 基础奖励系数，可调
-        w_distance_scaling = np.exp(-5 * distance)
-
-        orientation_reward = w_orient_base * (max(0, alignmemt_cos) **2) * w_distance_scaling
-        
-        if alignmemt_cos < 0.5:
-            orientation_reward -= 0.5 * w_distance_scaling
-        #######################################################
-
-
-        
-        # 阶段性距离奖励（一次性）
-        phase_distance_reward = 0.0
-        phase_thresholds = [0.5, 0.3, 0.1, 0.05, 0.01, 0.005, 0.002]
-        phase_rewards = [100.0, 200.0, 300.0, 500.0, 1000.0, 1500.0, 2000.0]
-        
-        for thresh, phase_reward in zip(phase_thresholds, phase_rewards):
-            if distance < thresh and thresh not in self._phase_rewards_given:
-                phase_distance_reward += phase_reward
-                self._phase_rewards_given.add(thresh)
-
-        # 近距离持续奖励
-        close_range_bonus = 0.0
-        
-        # 综合距离奖励
-        reward += improvement_reward + base_distance_penalty + phase_distance_reward + close_range_bonus + orientation_reward
-        
-        # 速度奖励 - 鼓励在整个过程中保持适中的速度
-        ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")
-        ee_vel = self.data.cvel[ee_body_id][:3].copy()
-        ee_speed = np.linalg.norm(ee_vel)
-        
-        # 速度惩罚 -  discourage high speeds
-        if ee_speed > 0.5:
-            reward -= 0.2
-
-        # 计算当前运动方向与目标方向的夹角
-        to_target = self.target_pos - ee_pos
-        to_target /= (np.linalg.norm(to_target) + 1e-6)
-        movement_dir = ee_vel / (np.linalg.norm(ee_vel) + 1e-6)
-        # 夹角越小奖励越高
-        direction_cos = np.dot(to_target, movement_dir)
-        direction_reward = max(0, direction_cos)**2 * 5.0  # 只奖励正向运动，平方以增加奖励差异
-        reward += direction_reward
-                 
-        # 碰撞惩罚 - 检查是否有接触
-        collision_penalty = 0.0
-        collision_detected = False
-        # for i in range(self.data.ncon):
-        #     # 如果检测到碰撞，给予惩罚
-        #     collision_penalty -= 5000.0
-        #     collision_detected = True
-
-        # 遍历 MuJoCo 检测到的所有接触点
-        for i in range(self.data.ncon):
-            contact = self.data.contact[i]
+            """
+            执行动作并返回结果
+            """
+            # --- [修改1] 保存状态用于后续计算惩罚 ---
+            self.previous_torque = self.data.ctrl[:self.nu].copy()
+            self.previous_joint_velocities = self.data.qvel[:self.nu].copy()
             
-            # 获取发生碰撞的两个几何体（geom）所属的 Body ID
-            body1_id = self.model.geom_bodyid[contact.geom1]
-            body2_id = self.model.geom_bodyid[contact.geom2]
+            # 应用动作
+            action = np.clip(action, -25.0, 25.0)
+            self.data.ctrl[:self.nu] = action   
             
-            # 判定规则：
-            # 1. 忽略 body1 和 body2 是同一个物体的情况（自碰撞）
-            # 2. 忽略 body1 是 body2 的直接父级的情况
-            # 3. 忽略 body2 是 body1 的直接父级的情况
-            is_parent_child = (
-                body1_id == body2_id or 
-                self.model.body_parentid[body1_id] == body2_id or 
-                self.model.body_parentid[body2_id] == body1_id
-            )
+            # 仿真一步
+            mujoco.mj_step(self.model, self.data)
+            self.step_count += 1
+            max_steps = 3000
+
+            # 获取状态与位置信息
+            state = self._get_state()
+            ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
+            ee_pos = self.data.site_xpos[ee_site_id].copy()
+            distance = np.linalg.norm(ee_pos - self.target_pos)
             
-            # 如果不是父子级关系，说明是真正的非法碰撞（如手撞到了胸口，或手臂穿透了腿部）
-            if not is_parent_child:
-                # name1 = self.model.geom(contact.geom1).name
-                # name2 = self.model.geom(contact.geom2).name
-                # print(f"DEBUG: 非法碰撞发生! {name1} <--> {name2}")
-                collision_detected = True
-                collision_penalty -= 5000.0  # 给予显著的惩罚
-                break  # 只要发现一处非法碰撞即可停止检测
-            
-        reward += collision_penalty
-        
-        # 添加关节速度变化惩罚项，抑制机械臂失控d
-        current_joint_velocities = self.data.qvel[:self.nu].copy()
-        joint_velocity_change = np.abs(current_joint_velocities - self.previous_joint_velocities)
-        # 对关节速度变化进行惩罚，系数可调整
-        # if distance < 0.05:
-        #     # 距离越小, 希望越稳定
-        #     joint_velocity_change_penalty = -0.1 * np.sum(joint_velocity_change)
-        # else:
-        joint_velocity_change_penalty = -0.03 * np.sum(joint_velocity_change)
-        reward += joint_velocity_change_penalty
+            reward = 0
+            # 时间惩罚：保持微小，仅作为打破僵局的项
+            reward -= 0.05 
+
+            # --- [修改2] 改进的对齐奖励 (30度平滑) ---
+            palm_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "inhand_base_link")
+            R_EE = self.data.xmat[palm_body_id].reshape(3, 3)
+            V_Desired = (self.target_pos - ee_pos) / (distance + 1e-6)
+            V_Palm = R_EE[:, -1] # 掌心向量
+            alignment_cos = np.dot(V_Palm, V_Desired)
+
+            # 使用 Sigmoid 实现 30 度平滑过渡 (cos(30°) ≈ 0.866)
+            # 距离越近，对齐的重要性指数级增加
+            w_orient_base = 10.0
+            w_distance_scaling = np.exp(-3.0 * distance)
+            smooth_score = 2 * (1 / (1 + np.exp(-20 * (alignment_cos - 0.866)))) - 1
+            orientation_reward = w_orient_base * smooth_score * w_distance_scaling
+            reward += orientation_reward
+
+            # --- [修改3] 碰撞逻辑优化 ---
+            collision_penalty = 0.0
+            collision_detected = False
+            for i in range(self.data.ncon):
+                contact = self.data.contact[i]
+                body1_id = self.model.geom_bodyid[contact.geom1]
+                body2_id = self.model.geom_bodyid[contact.geom2]
                 
-        # 检查是否完成
-        distance_to_target = np.linalg.norm(ee_pos - self.target_pos)
-        
-        done = False
-        # 新的成功条件：只要碰到目标位置就算成功（距离小于1mm）
-        if distance_to_target <= self.success_threshold:
-            done = True
-            # 成功奖励
-            success_reward = 10000.0
-            reward += success_reward
-            reward += (4*(max_steps - self.step_count))
-            # 速度奖励：成功时速度越慢奖励越高
-            if ee_speed < 0.01:
-                speed_reward_on_success = 2000.0
-            elif ee_speed < 0.05:
-                speed_reward_on_success = 1000.0
-            elif ee_speed < 0.1:
-                speed_reward_on_success = 500.0
+                # 排除自碰撞和父子级连接碰撞
+                is_legal = (body1_id == body2_id or 
+                            self.model.body_parentid[body1_id] == body2_id or 
+                            self.model.body_parentid[body2_id] == body1_id)
+                
+                if not is_legal:
+                    collision_detected = True
+                    collision_penalty = -5000.0 # 瞬间巨大惩罚
+                    break
+            
+            reward += collision_penalty
+            if collision_detected:
+                # 碰撞直接结束，不返还剩余步数奖励，防止机器人通过自杀逃避每步扣分
+                return state, reward, True, False, {}
+
+            # --- [修改4] 改进的距离奖励 (使用连续梯度而非离散阶跃) ---
+            # 基础距离梯度
+            improvement_reward = 0
+            if self.min_distance is not None:
+                if distance < self.min_distance:
+                    improvement_reward = 2.0 * (self.min_distance - distance)
+                    self.min_distance = distance
             else:
-                speed_reward_on_success = 0.0
-                
-            reward += speed_reward_on_success
-        
-        # 如果发生碰撞，也结束episode
-        # if collision_detected:
-        #     reward += -setp_penalty*(max_steps - self.step_count) # 扣除剩余的步数惩罚，防止自杀
-        #     done = True
-
-
-
-        # 只有在发生非父子级碰撞时才重置环境
-        # 如果发生碰撞，也结束episode
-        if collision_detected:
-            reward += -setp_penalty * (max_steps - self.step_count)
-            done = True
-
-
+                self.min_distance = distance
             
-        truncated = self.step_count >= max_steps  # 最大步数限制
-        
-        return state, reward, done, truncated, {}
+            # 增加一个连续的指数距离奖励，引导机器人向 0 靠近
+            reach_reward = 5.0 * np.exp(-5.0 * distance) 
+            reward += (improvement_reward + reach_reward - distance * 0.5)
+
+            # --- [修改5] 关键：靠近时的速度约束与平滑 ---
+            ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")
+            ee_vel = self.data.cvel[ee_body_id][:3].copy()
+            ee_speed = np.linalg.norm(ee_vel)
+            
+            # 动态速度阈值：距离越近，允许的速度越低
+            # 1.0 * distance 意味着 0.1m 时限速 0.1m/s
+            v_limit = max(0.05, 1.5 * distance) 
+            if ee_speed > v_limit:
+                reward -= 5.0 * (ee_speed - v_limit) # 超速惩罚
+
+            # 关节平滑惩罚：惩罚加速度（抑制抖动）和能量消耗（速度平方）
+            current_joint_velocities = self.data.qvel[:self.nu].copy()
+            accel_penalty = -0.05 * np.sum(np.abs(current_joint_velocities - self.previous_joint_velocities))
+            vel_sq_penalty = -0.001 * np.sum(np.square(current_joint_velocities))
+            reward += (accel_penalty + vel_sq_penalty)
+
+            # --- [修改6] 成功判定逻辑 ---
+            done = False
+            if distance <= self.success_threshold:
+                done = True
+                reward += 10000.0 # 成功基准奖
+                reward += 2.0 * (max_steps - self.step_count) # 效率奖
+                
+                # 软着陆奖励：如果成功时速度极低，给予额外丰厚奖励
+                if ee_speed < 0.05:
+                    reward += 2000.0
+                elif ee_speed < 0.1:
+                    reward += 500.0
+
+            truncated = self.step_count >= max_steps
+            return state, reward, done, truncated, {}
+
+
+
 
     def render(self):
         """
