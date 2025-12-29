@@ -1,5 +1,5 @@
 <mujoco model="g1_left_arm_inhand_fixed">
-  <compiler angle="radian" meshdir="meshes" />
+  <compiler angle="radian" meshdir="../meshes/unitree_meshes/" />
 
   <default>
     <default class="arm_motor">
@@ -17,38 +17,43 @@
   </default>
 
   <asset>
-    <mesh name="left_shoulder_pitch_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_shoulder_pitch_link.STL" />
-    <mesh name="left_shoulder_roll_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_shoulder_roll_link.STL" />
-    <mesh name="left_shoulder_yaw_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_shoulder_yaw_link.STL" />
-    <mesh name="left_elbow_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_elbow_link.STL" />
-    <mesh name="left_wrist_roll_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_wrist_roll_link.STL" />
-    <mesh name="left_wrist_pitch_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_wrist_pitch_link.STL" />
-    <mesh name="left_wrist_yaw_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/left_wrist_yaw_link.STL" />
-    <mesh name="torso_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/torso_link.STL" />
+    <mesh name="left_shoulder_pitch_link" file="left_shoulder_pitch_link.STL" />
+    <mesh name="left_shoulder_roll_link" file="left_shoulder_roll_link.STL" />
+    <mesh name="left_shoulder_yaw_link" file="left_shoulder_yaw_link.STL" />
+    <mesh name="left_elbow_link" file="left_elbow_link.STL" />
+    <mesh name="left_wrist_roll_link" file="left_wrist_roll_link.STL" />
+    <mesh name="left_wrist_pitch_link" file="left_wrist_pitch_link.STL" />
+    <mesh name="left_wrist_yaw_link" file="left_wrist_yaw_link.STL" />
+    <mesh name="torso_link" file="torso_link.STL" />
 
-    <mesh name="inhand_base_link" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/base_link.STL" />
+    <mesh name="inhand_base_link" file="Inspire_RH56DFTP/base_link.STL" />
 
-    <mesh name="inhand_left_thumb_1" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_thumb_1.STL" />
-    <mesh name="inhand_left_thumb_2" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_thumb_2.STL" />
-    <mesh name="inhand_left_thumb_3" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_thumb_3.STL" />
-    <mesh name="inhand_left_thumb_4" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_thumb_4.STL" />
+    <mesh name="inhand_left_thumb_1" file="Inspire_RH56DFTP/left_thumb_1.STL" />
+    <mesh name="inhand_left_thumb_2" file="Inspire_RH56DFTP/left_thumb_2.STL" />
+    <mesh name="inhand_left_thumb_3" file="Inspire_RH56DFTP/left_thumb_3.STL" />
+    <mesh name="inhand_left_thumb_4" file="Inspire_RH56DFTP/left_thumb_4.STL" />
 
-    <mesh name="inhand_left_index_1" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_index_1.STL" />
-    <mesh name="inhand_left_index_2" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_index_2.STL" />
+    <mesh name="inhand_left_index_1" file="Inspire_RH56DFTP/left_index_1.STL" />
+    <mesh name="inhand_left_index_2" file="Inspire_RH56DFTP/left_index_2.STL" />
 
-    <mesh name="inhand_left_middle_1" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_middle_1.STL" />
-    <mesh name="inhand_left_middle_2" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_middle_2.STL" />
+    <mesh name="inhand_left_middle_1" file="Inspire_RH56DFTP/left_middle_1.STL" />
+    <mesh name="inhand_left_middle_2" file="Inspire_RH56DFTP/left_middle_2.STL" />
 
-    <mesh name="inhand_left_ring_1" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_ring_1.STL" />
-    <mesh name="inhand_left_ring_2" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_ring_2.STL" />
+    <mesh name="inhand_left_ring_1" file="Inspire_RH56DFTP/left_ring_1.STL" />
+    <mesh name="inhand_left_ring_2" file="Inspire_RH56DFTP/left_ring_2.STL" />
 
-    <mesh name="inhand_left_little_1" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_little_1.STL" />
-    <mesh name="inhand_left_little_2" file="/home/indusbot/arm/zero-robotic-arm/5. Deep_LR/meshes/unitree_meshes/Inspire_RH56DFTP/left_little_2.STL" />
+    <mesh name="inhand_left_little_1" file="Inspire_RH56DFTP/left_little_1.STL" />
+    <mesh name="inhand_left_little_2" file="Inspire_RH56DFTP/left_little_2.STL" />
+    <texture name="plane" type="2d" builtin="checker" rgb1=".1 .1 .1" rgb2=".9 .9 .9"
+        width="64" height="64" mark="cross" markrgb=".8 .8 .8" />
+    <material name="plane" reflectance="0.3" texture="plane" texrepeat="4 4" texuniform="true"/>
   </asset>
 
   <worldbody>
-    <geom name="floor" type="plane" pos="0 0 0" size="10 10 0.1" rgba="0.9 0.9 0.9 1" />
-    <light pos="0 0 3" directional="true" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2" />
+    <geom name="floor" pos="0 0 0" size="0 0 .25" type="plane" material="plane"
+            condim="3" />
+    <light directional="true" ambient=".3 .3 .3" pos="30 30 30" dir="0 -.5 -1"
+        diffuse=".5 .5 .5" specular=".5 .5 .5" />
 
     <body name="base_link" pos="0 0 0.65">
       <geom name="base_geom" type="box" size="0.1 0.1 0.65" rgba="0.5 0.5 0.5 1" class="visual" />
@@ -112,20 +117,14 @@
                               type="sphere"
                               rgba="1 0 0 1"/>
 
-                        <!-- ================================================= -->
-                        <!-- ===================== THUMB ===================== -->
-                        <!-- ================================================= -->
-                        <!-- TF: base_link -> left_thumb_1
-                             T=[0.027, 0.021, 0.069], Q=[0,0,0,1] -->
+
                         <body name="left_thumb_1"
                               pos="0.027 0.021 0.069"
                               quat="1 0 0 0">
                           <geom type="mesh" mesh="inhand_left_thumb_1" class="visual"/>
                           <geom type="mesh" mesh="inhand_left_thumb_1" class="collision"/>
 
-                          <!-- TF: left_thumb_1 -> left_thumb_2
-                               T=[0.007,0.011,0.005], Q=[-0.092,0.701,0.701,-0.092]
-                               MuJoCo quat=[qw,qx,qy,qz]=[-0.092,-0.092,0.701,0.701] -->
+
                           <body name="left_thumb_2"
                                 pos="0.007 0.011 0.005"
                                 quat="-0.092 -0.092 0.701 0.701">
@@ -148,12 +147,6 @@
                           </body>
                         </body>
 
-                        <!-- ================================================= -->
-                        <!-- ===================== INDEX ===================== -->
-                        <!-- ================================================= -->
-                        <!-- TF: base_link -> left_index_1
-                             T=[0.039,0.001,0.156], Q=[0.491,-0.491,-0.509,0.509]
-                             MuJoCo quat=[0.509,0.491,-0.491,-0.509] -->
                         <body name="left_index_1"
                               pos="0.039 0.001 0.156"
                               quat="0.509 0.491 -0.491 -0.509">
@@ -168,12 +161,7 @@
                           </body>
                         </body>
 
-                        <!-- ================================================= -->
-                        <!-- ===================== MIDDLE ==================== -->
-                        <!-- ================================================= -->
-                        <!-- TF: base_link -> left_middle_1
-                             T=[0.017,0.001,0.157], Q=[-0.5,0.5,0.5,-0.5]
-                             MuJoCo quat=[-0.5,-0.5,0.5,0.5] -->
+
                         <body name="left_middle_1"
                               pos="0.017 0.001 0.157"
                               quat="-0.500 -0.500 0.500 0.500">
@@ -188,12 +176,7 @@
                           </body>
                         </body>
 
-                        <!-- ================================================= -->
-                        <!-- ===================== RING ====================== -->
-                        <!-- ================================================= -->
-                        <!-- TF: base_link -> left_ring_1
-                             T=[-0.005,0.001,0.157], Q=[-0.513,0.513,0.487,-0.487]
-                             MuJoCo quat=[-0.487,-0.513,0.513,0.487] -->
+
                         <body name="left_ring_1"
                               pos="-0.005 0.001 0.157"
                               quat="-0.487 -0.513 0.513 0.487">
@@ -208,12 +191,7 @@
                           </body>
                         </body>
 
-                        <!-- ================================================= -->
-                        <!-- ===================== LITTLE ==================== -->
-                        <!-- ================================================= -->
-                        <!-- TF: base_link -> left_little_1
-                             T=[-0.026,0.001,0.154], Q=[-0.525,0.525,0.473,-0.473]
-                             MuJoCo quat=[-0.473,-0.525,0.525,0.473] -->
+
                         <body name="left_little_1"
                               pos="-0.026 0.001 0.154"
                               quat="-0.473 -0.525 0.525 0.473">
@@ -228,8 +206,8 @@
                           </body>
                         </body>
 
-                      </body> <!-- inhand_base_link -->
-                    </body>   <!-- inhand_mount -->
+                      </body> 
+                    </body> 
 
                   </body>
                 </body>
