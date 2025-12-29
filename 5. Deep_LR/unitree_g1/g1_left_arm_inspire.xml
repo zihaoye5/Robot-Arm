@@ -91,7 +91,6 @@
       <site name="imu" size="0.01" pos="0.0 0.0 0.0" />
       <inertial pos="0 0 -0.07605" quat="1 0 -0.000399148 0" mass="3.813"
         diaginertia="0.010549 0.0093089 0.0079184" />
-      <!-- <joint name="floating_base_joint" type="free" limited="false" actuatorfrclimited="false" /> -->
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.2 0.2 0.2 1"
         mesh="pelvis" />
       <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.7 0.7 0.7 1"
@@ -214,7 +213,7 @@
             <geom name="head_collision" pos="0.0039635 0 -0.054" type="mesh" mesh="head_link" class="base_static" rgba="0.2 0.2 0.2 1" />
 
             <geom name="waist_support_collision" pos="0.0039635 0 -0.054" quat="1 0 0 0" type="mesh" mesh="waist_support_link" class="base_static" rgba="0.7 0.7 0.7 1" />
-            <body name="left_shoulder_pitch_link" pos="0.0039563 0.10022 0.23778" >
+            <body name="left_shoulder_pitch_link" pos="0.0039563 0.10022 0.23778" quat="0.990264 0.139201 1.38722e-05 -9.86868e-05">
                 <inertial pos="0 0.035892 -0.011628" quat="0.654152 0.0130458 -0.326267 0.68225"
                 mass="0.718" diaginertia="0.000465864 0.000432842 0.000406394"/>
                 <joint name="left_shoulder_pitch_joint" pos="0 0 0" axis="0 1 0"
@@ -449,6 +448,8 @@
     <exclude body1="left_wrist_roll_link" body2="left_wrist_pitch_link" />
     <exclude body1="left_wrist_pitch_link" body2="left_wrist_yaw_link" />
     <exclude body1="torso_link" body2="left_shoulder_roll_link" />
+    <exclude body1="torso_link" body2="left_shoulder_pitch_link" />
+
   </contact>
 
 </mujoco>

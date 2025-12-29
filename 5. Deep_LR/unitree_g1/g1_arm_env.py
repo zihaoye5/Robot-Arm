@@ -110,21 +110,21 @@ class RobotArmEnv(gym.Env):
         BASE_POS_Z = 1.071
         
         # 限制参数
-        MAX_ARM_LENGTH = 0.54   # 最外圈半径 (手臂最大长度)
-        MIN_REACH_DIST = 0.20    # 最内圈半径 (20cm)
+        MAX_ARM_LENGTH = 0.49   # 最外圈半径 (手臂最大长度)
+        MIN_REACH_DIST = 0.25    # 最内圈半径 (20cm)
         
         # ----------------------------------------------------
         # 在球坐标系中随机生成目标点 (以 P_base 为原点)
         # ----------------------------------------------------
         
-        # 1. 距离 (Radius, ρ): 在球壳范围 [0.2m, 0.42m] 内均匀采样
+        # 1. 距离 (Radius, ρ): 在球壳范围 [0.25m, 0.49m] 内均匀采样
         rho = self.np_random.uniform(MIN_REACH_DIST, MAX_ARM_LENGTH)
         
         
         # phi,与y轴的夹角
-        phi  = self.np_random.uniform(np.pi/4, np.pi * 3 / 4)
+        phi  = self.np_random.uniform(np.pi/3, np.pi * 2 / 3)
         # theta, 与z轴的夹角
-        theta = self.np_random.uniform(np.pi/2, 5/6 * np.pi)
+        theta = self.np_random.uniform(np.pi/2, 4/5 * np.pi)
 
 
 
@@ -196,8 +196,8 @@ class RobotArmEnv(gym.Env):
 
             # 使用 Sigmoid 实现 30 度平滑过渡 (cos(30°) ≈ 0.866)
             # 距离越近，对齐的重要性指数级增加
-            w_orient_base = 10.0
-            w_distance_scaling = np.exp(-3.0 * distance)
+            w_orient_base = 20.0
+            w_distance_scaling = np.exp(-1.0 * distance)
             smooth_score = 2 * (1 / (1 + np.exp(-20 * (alignment_cos - 0.866)))) - 1
             orientation_reward = w_orient_base * smooth_score * w_distance_scaling
             reward += orientation_reward
@@ -236,7 +236,7 @@ class RobotArmEnv(gym.Env):
                 self.min_distance = distance
             
             # 增加一个连续的指数距离奖励，引导机器人向 0 靠近
-            reach_reward = 5.0 * np.exp(-5.0 * distance) 
+            reach_reward = 5.0 * np.exp(-2.0 * distance) 
             reward += (improvement_reward + reach_reward - distance * 0.5)
 
             # --- [修改5] 关键：靠近时的速度约束与平滑 ---
