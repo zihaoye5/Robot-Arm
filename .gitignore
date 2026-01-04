@@ -2,6 +2,8 @@
 *.log
 *.tmp
 *.cache
+*.zip
+*.pkl
 
 # python
 __pycache__/
@@ -17,3 +19,5 @@ node_modules/
 # 操作系统文件
 .DS_Store
 Thumbs.db
+
+
