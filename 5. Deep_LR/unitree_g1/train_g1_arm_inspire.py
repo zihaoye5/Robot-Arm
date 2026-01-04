@@ -11,7 +11,7 @@ import gymnasium as gym
 from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise # 添加高斯噪声，提升探索性
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold, BaseCallback # base就是一个框架，eval在此框架上进行，主要功能就是：每个epoch自动评估、监控记录等
-from stable_baselines3.common.env_util import make_vec_env # 创建并行环境向量
+from stable_baselines3.common.env_util import make_vec_env, SubprocVecEnv# 创建并行环境向量, 支持多进程(默认为dummyVecEnv单进程, 如果这个时候开启多环境, 就是串行的多环境，反而会变慢)
 from stable_baselines3.common.vec_env import VecNormalize  # 对观测/奖励做归一化的向量包装器
 import os # 文件保存
 import time
@@ -183,14 +183,14 @@ class TD3Loader:
         
         if normalize_file and os.path.exists(normalize_file):
             print(f"加载归一化参数：{normalize_file}")
-            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs)
+            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs, vec_env_cls=SubprocVecEnv) # 不写默认为dummyVecEnv, 顺序进程
             env = VecNormalize.load(normalize_file, env)
             env.reset()
         else:
             if normalize_file:
                 print(f"警告：未找到归一化文件 {normalize_file}。")
             print("创建全新的归一化环境")
-            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs)
+            env = make_vec_env(lambda:self.RobotArmEnv(), n_envs = n_envs, vec_env_cls = SubprocVecEnv)
             env = VecNormalize(env, norm_obs = True, norm_reward = True)
 
 
@@ -206,10 +206,10 @@ class TD3Loader:
                 if "logs" in old_run_dir:
                     run_name = os.path.basename(old_run_dir)
                     
-                    # 【修正 2A】强制设置 TensorBoard Log Path 的父目录
+                    # 强制设置 TensorBoard Log Path 的父目录
                     td3_kwargs['tensorboard_log'] = os.path.dirname(old_run_dir) # 例如：./logs/
                     
-                    # 【修正 2B】强制设置 tb_log_name，阻止自增
+                    # 强制设置 tb_log_name，阻止自增
                     td3_kwargs['tb_log_name'] = run_name 
                     print(f"日志将继续记录到旧目录: {os.path.join(td3_kwargs['tensorboard_log'], run_name)}")
                 
@@ -235,7 +235,7 @@ class TD3Loader:
             model.gradient_steps = n_envs
             print(f"模型当前步数： {model.num_timesteps}")
 
-            # 【修正 3B】模型加载成功后，必须再次手动设置 Logger，这是阻止自增的关键！
+            # 模型加载成功后，必须再次手动设置 Logger，这是阻止自增的关键！
             if 'tb_log_name' in td3_kwargs:
                 log_path_base = td3_kwargs.get('tensorboard_log', './logs/')
                 final_log_path = os.path.join(log_path_base, td3_kwargs['tb_log_name'])
@@ -276,9 +276,10 @@ def train_g1_arm(save_freq=100000, n_envs=5, num_iterations=10000000, load_path 
     """
     print("创建机械臂环境...")
     
-    # 创建环境并使用VecNormalize进行归一化
-    env = make_vec_env(lambda: RobotArmEnv(), n_envs=n_envs)  ## n_envs是make_vec_env的参数名
-    env = VecNormalize(env, norm_obs=True, norm_reward=True)
+    # # 创建环境并使用VecNormalize进行归一化
+    # 在load_or_create中已经创建了环境，不需要再创建一次
+    # env = make_vec_env(lambda: RobotArmEnv(), n_envs=n_envs, vec_env_cls=SubprocVecEnv) ## n_envs是make_vec_env的参数名
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True)
     
     # 设置动作噪声
     # n_actions = env.action_space.shape[-1]
@@ -430,7 +431,7 @@ def test_g1_arm(model_path="./models/td3_g1_arm_final", # 11. 测试函数名称
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
             total_reward += reward[0] if isinstance(reward, np.ndarray) else reward
-            time.sleep(0.01)
+            time.sleep(0.01) # 测试时，推理频率受到限制，约为100hz
             env.render()
             
             if done:
@@ -443,7 +444,7 @@ def test_g1_arm(model_path="./models/td3_g1_arm_final", # 11. 测试函数名称
     print(f"Average reward over {num_episodes} episodes: {np.mean(episode_rewards)}")
     return episode_rewards
 
-
+ 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train or test G1 arm with TD3") # 12. 描述更新
     parser.add_argument("--test", action="store_true", help="Test the trained model")

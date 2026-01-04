@@ -164,7 +164,7 @@ class RobotArmEnv(gym.Env):
             """
             执行动作并返回结果
             """
-            # --- [修改1] 保存状态用于后续计算惩罚 ---
+            # 保存状态用于后续计算惩罚 ---
             self.previous_torque = self.data.ctrl[:self.nu].copy()
             self.previous_joint_velocities = self.data.qvel[:self.nu].copy()
             
@@ -187,7 +187,7 @@ class RobotArmEnv(gym.Env):
             # 时间惩罚：保持微小，仅作为打破僵局的项
             reward -= 0.05 
 
-            # --- [修改2] 改进的对齐奖励 (30度平滑) ---
+            # 改进的对齐奖励 (30度平滑) ---
             palm_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "inhand_base_link")
             R_EE = self.data.xmat[palm_body_id].reshape(3, 3)
             V_Desired = (self.target_pos - ee_pos) / (distance + 1e-6)
@@ -202,7 +202,7 @@ class RobotArmEnv(gym.Env):
             orientation_reward = w_orient_base * smooth_score * w_distance_scaling
             reward += orientation_reward
 
-            # --- [修改3] 碰撞逻辑优化 ---
+            # 碰撞逻辑优化 ---
             collision_penalty = 0.0
             collision_detected = False
             for i in range(self.data.ncon):
@@ -225,7 +225,7 @@ class RobotArmEnv(gym.Env):
                 # 碰撞直接结束，不返还剩余步数奖励，防止机器人通过自杀逃避每步扣分
                 return state, reward, True, False, {}
 
-            # --- [修改4] 改进的距离奖励 (使用连续梯度而非离散阶跃) ---
+            # 改进的距离奖励 (使用连续梯度而非离散阶跃)
             # 基础距离梯度
             improvement_reward = 0
             if self.min_distance is not None:
@@ -239,7 +239,7 @@ class RobotArmEnv(gym.Env):
             reach_reward = 5.0 * np.exp(-2.0 * distance) 
             reward += (improvement_reward + reach_reward - distance * 0.5)
 
-            # --- [修改5] 关键：靠近时的速度约束与平滑 ---
+            # 关键：靠近时的速度约束与平滑
             ee_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "left_wrist_yaw_link")
             ee_vel = self.data.cvel[ee_body_id][:3].copy()
             ee_speed = np.linalg.norm(ee_vel)
@@ -256,7 +256,7 @@ class RobotArmEnv(gym.Env):
             vel_sq_penalty = -0.001 * np.sum(np.square(current_joint_velocities))
             reward += (accel_penalty + vel_sq_penalty)
 
-            # --- [修改6] 成功判定逻辑 ---
+            # 成功判定逻辑
             done = False
             if distance <= self.success_threshold:
                 done = True
